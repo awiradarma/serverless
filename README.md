@@ -1022,6 +1022,7 @@ $
 
 ```
 ![kafka_channel.png](kafka_channel.png)
+![eventing_kafka_channel.png](eventing_kafka_channel.png)
 
 Additional links :
 https://redhat-developer-demos.github.io/knative-tutorial/knative-tutorial/advanced/eventing-with-kafka.html
