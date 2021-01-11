@@ -876,6 +876,153 @@ Data,
 - You can visualize the triggering event that started the event-display via kiali
 ![eventing_kafka_service.png](eventing_kafka_service.png)
 
+### Leveraging kafka broker
+
+- Set up KafkaChannel as default channel in knativekafka namespace
+
+```
+$ cat default-channel-config.yml 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: default-ch-webhook
+  namespace: knative-eventing
+data:
+  default-ch-config: |
+    clusterDefault:
+      apiVersion: messaging.knative.dev/v1
+      kind: InMemoryChannel
+    namespaceDefaults:
+      knativekafka:
+        apiVersion: messaging.knative.dev/v1beta1
+        kind: KafkaChannel
+        spec:
+          numPartitions: 2
+          replicationFactor: 1
+$ k apply -f default-channel-config.yml 
+configmap/default-ch-webhook configured
+```
+- Create a default channel in knativekafka namespace
+```
+$ cat default-kafka-channel.yml 
+apiVersion: messaging.knative.dev/v1
+kind: Channel
+metadata:
+  name: my-events-ch
+
+$ k apply -f default-kafka-channel.yml 
+channel.messaging.knative.dev/my-events-ch created
+$ 
+$ k get channel
+NAME                                         URL                                                             AGE   READY   REASON
+channel.messaging.knative.dev/my-events-ch   http://my-events-ch-kn-channel.knativekafka.svc.cluster.local   40s   True    
+
+NAME                                              READY   REASON   URL                                                             AGE
+kafkachannel.messaging.knative.dev/my-events-ch   True             http://my-events-ch-kn-channel.knativekafka.svc.cluster.local   40s
+$ 
+
+$ k get kafkachannel
+NAME           READY   REASON   URL                                                             AGE
+my-events-ch   True             http://my-events-ch-kn-channel.knativekafka.svc.cluster.local   81m
+$ 
+```
+
+- Note that a new pod is started (kafka-ch-dispatcher-*) in the knative-eventing namespace
+```
+$ k get po -n knative-eventing
+NAME                                    READY   STATUS    RESTARTS   AGE
+eventing-controller-66c877b879-qtbcj    1/1     Running   0          21h
+eventing-webhook-644c5c7667-sshrs       1/1     Running   0          21h
+imc-controller-587f98f97d-4kstm         1/1     Running   0          21h
+imc-dispatcher-6db95d7857-vghzx         1/1     Running   0          21h
+mt-broker-ingress-7d8595d747-8q2dx      1/1     Running   0          21h
+mt-broker-filter-6bd64f8c65-bt4pc       1/1     Running   0          21h
+mt-broker-controller-76b65f7c96-rbbsv   1/1     Running   0          21h
+kafka-webhook-7c5859dbb-tm8q2           1/1     Running   0          6h6m
+kafka-ch-dispatcher-567d595bb7-gfp5k    1/1     Running   0          2m53s
+kafka-ch-controller-f6f9ff8b5-xcj77     1/1     Running   2          6h6m
+$ 
+```
+- check that a new kafka topic has been generated
+```
+[root@kafka01 kafka_2.13-2.7.0]# ./bin/kafka-topics.sh  --list --bootstrap-server localhost:9092
+__consumer_offsets
+knative-messaging-kafka.knativekafka.my-events-ch
+mykafkasource
+test
+[root@kafka01 kafka_2.13-2.7.0]# 
+```
+
+- configure a new kafkasource using test topic, which targets the channel as its sink
+```
+$ k apply -f event-source-to-channel.yaml 
+kafkasource.sources.knative.dev/test-topic created
+$ 
+$ k get kafkasource
+NAME           TOPICS              BOOTSTRAPSERVERS   READY   REASON   AGE
+kafka-source   ["mykafkasource"]   ["kafka01:9092"]   True             6h45m
+test-topic     ["test"]            ["kafka01:9092"]   True             38s
+$ 
+```
+- create a couple knative serving services which will consume / subscribe events from the my-events-ch channel
+```
+$ k apply -f subscribers.yml 
+service.serving.knative.dev/sub1 created
+service.serving.knative.dev/sub2 created
+$ 
+$ k get ksvc
+NAME            URL                                                   LATESTCREATED         LATESTREADY           READY   REASON
+event-display   http://event-display.knativekafka.10.61.0.14.xip.io   event-display-00001   event-display-00001   True    
+sub1            http://sub1.knativekafka.10.61.0.14.xip.io            sub1-00001            sub1-00001            True    
+sub2            http://sub2.knativekafka.10.61.0.14.xip.io            sub2-00001            sub2-00001            True    
+$ 
+```
+
+- create subscriptions for the two knative serving services
+```
+$ k apply -f subscription1.yml 
+subscription.messaging.knative.dev/sub1 created
+$ k apply -f subscription2.yml 
+subscription.messaging.knative.dev/sub2 created
+$ 
+$ k get subscription
+NAME   AGE     READY   REASON
+sub1   9m58s   True    
+sub2   9m53s   True    
+$ 
+```
+- send some message to test topic and validate that two ksvc would be started
+```
+[root@kafka01 kafka_2.13-2.7.0]# ./bin/kafka-console-producer.sh --topic test --bootstrap-server localhost:9092
+>{"id": 456}
+>{"name": "John Smith"}
+```
+- validate that the two ksvc would be triggered and processing the message
+```
+$ k get po
+NAME                                                              READY   STATUS            RESTARTS   AGE
+kafkasource-kafka-source-e845bd56-6797-4f68-9696-bdc09cf11ltbzn   2/2     Running           2          6h52m
+kafkasource-test-topic-995d848d-c2a4-4eb0-ae53-a20c822c20877ccp   2/2     Running           2          7m12s
+sub1-00001-deployment-74fb795d79-pjsr5                            0/3     PodInitializing   0          12s
+sub2-00001-deployment-677cf645f4-njt7h                            1/3     Running           0          12s
+sub2-00001-deployment-677cf645f4-prqj7                            1/3     Running           0          12s
+sub1-00001-deployment-74fb795d79-bc8jc                            1/3     Running           0          12s
+$
+$ k logs sub1-00001-deployment-74fb795d79-pjsr5 -c user-container | grep eventing-hello
+2021-01-11 22:42:44,280 INFO  [eventing-hello] (executor-thread-1) ExampleResource's @POST method invoked.
+2021-01-11 22:42:44,344 INFO  [eventing-hello] (executor-thread-1) ce-id=partition:0/offset:1
+2021-01-11 22:42:44,345 INFO  [eventing-hello] (executor-thread-1) ce-source=/apis/v1/namespaces/knativekafka/kafkasources/test-topic#test
+2021-01-11 22:42:44,346 INFO  [eventing-hello] (executor-thread-1) ce-specversion=1.0
+2021-01-11 22:42:44,347 INFO  [eventing-hello] (executor-thread-1) ce-time=2021-01-11T22:42:21.015Z
+2021-01-11 22:42:44,354 INFO  [eventing-hello] (executor-thread-1) ce-type=dev.knative.kafka.event
+2021-01-11 22:42:44,362 INFO  [eventing-hello] (executor-thread-1) content-type=null
+2021-01-11 22:42:44,369 INFO  [eventing-hello] (executor-thread-1) content-length=22
+2021-01-11 22:42:44,372 INFO  [eventing-hello] (executor-thread-1) POST:{"name": "John Smith"}
+$ 
+
+```
+![kafka_channel.png](kafka_channel.png)
+
 Additional links :
 https://redhat-developer-demos.github.io/knative-tutorial/knative-tutorial/advanced/eventing-with-kafka.html
 
