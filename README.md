@@ -635,7 +635,248 @@ $
 
 ### Configure kafka as knative eventing source
 
-knative eventing kafkasource
+- create a new VM to run kafka, rename it as kafka01
+```
+$ cat kafka.yml 
+apiVersion: ignite.weave.works/v1alpha3
+kind: VM
+metadata:
+  name: kafka
+spec:
+  image:
+    oci: weaveworks/ignite-centos:7
+  cpus: 2
+  diskSize: 10GB
+  memory: 2GB
+$ 
+$ sudo ignite run --config kafka.yml 
+[sudo] password for andre: 
+INFO[0001] Created VM with ID "2a9abfbdd53e182e" and name "kafka" 
+INFO[0001] Networking is handled by "cni"               
+INFO[0001] Started Firecracker VM "2a9abfbdd53e182e" in a container with ID "ignite-2a9abfbdd53e182e" 
+$ sudo ignite attach kafka
+...
+2a9abfbdd53e182e login: root
+Password: 
+[root@2a9abfbdd53e182e ~]# ifconfig eth0
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.61.0.16  netmask 255.255.0.0  broadcast 10.61.255.255
+        inet6 fe80::ec5b:67ff:fe0d:4b49  prefixlen 64  scopeid 0x20<link>
+        ether ee:5b:67:0d:4b:49  txqueuelen 1000  (Ethernet)
+        RX packets 31689  bytes 135718029 (129.4 MiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 15032  bytes 1010880 (987.1 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+[root@2a9abfbdd53e182e ~]# hostname kafka01
+
+[root@2a9abfbdd53e182e ~]# yum install -y curl which java
+[root@2a9abfbdd53e182e ~]# curl -LO https://mirror.jframeworks.com/apache/kafka/2.7.0/kafka_2.13-2.7.0.tgz
+[root@2a9abfbdd53e182e ~]# tar xzf kafka_2.13-2.7.0.tgz
+[root@2a9abfbdd53e182e ~]# cd kafka_2.13-2.7.0
+```
+- start zookeeper and kafka server
+```
+[root@2a9abfbdd53e182e kafka_2.13-2.7.0]# nohup bin/zookeeper-server-start.sh config/zookeeper.properties &
+[root@2a9abfbdd53e182e kafka_2.13-2.7.0]# nohup bin/kafka-server-start.sh config/server.properties &
+```
+- create a new kafka topic called mykafkasource
+```
+[root@2a9abfbdd53e182e kafka_2.13-2.7.0]# bin/kafka-topics.sh --create --topic mykafkasource --bootstrap-server localhost:9092
+Created topic mykafkasource.
+[root@2a9abfbdd53e182e kafka_2.13-2.7.0]# bin/kafka-topics.sh --describe --topic mykafkasource --bootstrap-server localhost:9092
+Topic: mykafkasource	PartitionCount: 1	ReplicationFactor: 1	Configs: segment.bytes=1073741824
+	Topic: mykafkasource	Partition: 0	Leader: 0	Replicas: 0	Isr: 0
+[root@2a9abfbdd53e182e kafka_2.13-2.7.0]# 
+```
+- modify and apply a kafka service definition to point to the external IP address of kafka VM
+```
+$ cat kafka-endpoint.yaml 
+kind: Endpoints
+apiVersion: v1
+metadata:
+ name: kafka01
+ namespace: knative-eventing
+subsets:
+ - addresses:
+     - ip: 10.61.0.16
+   ports:
+     - port: 9092
+$
+$ cat kafka-service.yaml 
+kind: Service
+apiVersion: v1
+metadata:
+ name: kafka01
+ namespace: knative-eventing
+spec:
+ type: ClusterIP
+ ports:
+ - port: 9092
+   targetPort: 9092
+$ 
+$ k apply -f kafka-endpoint.yaml 
+endpoints/kafka01 created
+$ k apply -f kafka-service.yaml 
+service/kafka01 created
+$ 
+$ k get endpoints
+NAME               ENDPOINTS                         AGE
+eventing-webhook   10.42.0.18:8443                   15h
+imc-dispatcher     10.42.1.18:8080                   15h
+broker-ingress     10.42.1.19:9092,10.42.1.19:8080   15h
+broker-filter      10.42.0.20:9092,10.42.0.20:8080   15h
+kafka01            10.61.0.16:9092                   92s
+$ k get svc
+NAME               TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)           AGE
+eventing-webhook   ClusterIP   10.43.97.195    <none>        443/TCP           15h
+imc-dispatcher     ClusterIP   10.43.48.2      <none>        80/TCP            15h
+broker-filter      ClusterIP   10.43.225.142   <none>        80/TCP,9092/TCP   15h
+broker-ingress     ClusterIP   10.43.167.209   <none>        80/TCP,9092/TCP   15h
+kafka01            ClusterIP   10.43.116.248   <none>        9092/TCP          53s
+$ 
+
+```
+- install knative eventing support for kafkasource ( sourced from https://github.com/knative/eventing-contrib/releases/download/v0.17.7 ) after modifying the bootstrap server to point to the IP address of kafka VM
+```
+$ grep 9092 kafka-channel.yaml 
+  # which is in the format of my-cluster-kafka-bootstrap.my-kafka-namespace:9092.
+  bootstrapServers: 10.61.0.16:9092
+$
+$ k apply -f kafka-source.yaml
+$ k get po
+NAME                                    READY   STATUS    RESTARTS   AGE
+eventing-controller-66c877b879-qtbcj    1/1     Running   0          15h
+eventing-webhook-644c5c7667-sshrs       1/1     Running   0          15h
+imc-controller-587f98f97d-4kstm         1/1     Running   0          15h
+imc-dispatcher-6db95d7857-vghzx         1/1     Running   0          15h
+mt-broker-ingress-7d8595d747-8q2dx      1/1     Running   0          15h
+mt-broker-filter-6bd64f8c65-bt4pc       1/1     Running   0          15h
+mt-broker-controller-76b65f7c96-rbbsv   1/1     Running   0          15h
+kafka-ch-controller-f6f9ff8b5-xcj77     1/1     Running   0          27s
+kafka-webhook-7c5859dbb-tm8q2           1/1     Running   0          26s
+$ 
+$ k get po -n knative-sources
+NAME                                        READY   STATUS    RESTARTS   AGE
+kafka-controller-manager-675fdccdbb-6vqw8   1/1     Running   0          88s
+$ 
+
+```
+### Kafkasource - sink
+- create a new namespace, enable istio injection, and create a kafkasource
+```
+$ k create ns knativekafka
+namespace/knativekafka created
+$ k config set-context --current --namespace=knativekafka
+Context "default" modified.
+$ k label namespace knativekafka istio-injection=enabled
+namespace/knativekafka labeled
+$ 
+$ cat service.yaml 
+kind: Service
+apiVersion: v1
+metadata:
+ name: kafka01
+spec:
+ type: ClusterIP
+ ports:
+ - port: 9092
+   targetPort: 9092
+$ k apply -f service.yaml 
+service/kafka01 created
+$ cat endpoint.yaml 
+kind: Endpoints
+apiVersion: v1
+metadata:
+ name: kafka01
+subsets:
+ - addresses:
+     - ip: 10.61.0.16
+   ports:
+     - port: 9092
+$ k apply -f endpoint.yaml 
+endpoints/kafka01 created
+$ 
+$ k apply -f event-display.yaml 
+service.serving.knative.dev/event-display created
+$ 
+$ cat event-source.yaml 
+# Copyright 2019 The Knative Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: sources.knative.dev/v1beta1
+kind: KafkaSource
+metadata:
+  name: kafka-source
+spec:
+  consumerGroup: my_consumer_group
+  bootstrapServers:
+    - kafka01:9092
+  topics:
+    - mykafkasource
+  sink:
+    ref:
+      apiVersion: serving.knative.dev/v1
+      kind: Service
+      name: event-display
+$ k apply -f event-source.yaml 
+kafkasource.sources.knative.dev/kafka-source created
+$ 
+$ k get po
+NAME                                                              READY   STATUS    RESTARTS   AGE
+event-display-00001-deployment-55f5fd79db-t7s86                   3/3     Running   0          40s
+kafkasource-kafka-source-e845bd56-6797-4f68-9696-bdc09cf11ltbzn   2/2     Running       2          54s
+$ 
+
+$ k get kafkasource
+NAME           TOPICS     BOOTSTRAPSERVERS   READY   REASON   AGE
+kafka-source   ["mykafkasource"]   ["kafka01:9092"]   True             33s
+$ 
+```
+- From kafka VM, insert a message to mykafkasource topic
+```
+[root@kafka01 kafka_2.13-2.7.0]# cd bin
+[root@kafka01 bin]# ./kafka-console-producer.sh --topic mykafkasource --bootstrap-server localhost:9092
+>{"name": "joe"}
+
+```
+- Check that the eventdisplay was triggered
+```
+$ k get po
+NAME                                                              READY   STATUS            RESTARTS   AGE
+kafkasource-kafka-source-e845bd56-6797-4f68-9696-bdc09cf11ltbzn   2/2     Running           2          73m
+event-display-00001-deployment-55f5fd79db-47ls9                   0/3     PodInitializing   0          6s
+$ k logs -f event-display-00001-deployment-55f5fd79db-47ls9 -c user-container
+☁️  cloudevents.Event
+Validation: valid
+Context Attributes,
+  specversion: 1.0
+  type: dev.knative.kafka.event
+  source: /apis/v1/namespaces/knativekafka/kafkasources/kafka-source#mykafkasource
+  subject: partition:0#0
+  id: partition:0/offset:0
+  time: 2021-01-11T17:03:53.089Z
+Extensions,
+  traceparent: 00-8a3c4ae1391e71a8728972f155d5152e-731903750794d379-00
+Data,
+  {"name": "joe"}
+
+```
+- You can visualize the triggering event that started the event-display via kiali
+![eventing_kafka_service.png](eventing_kafka_service.png)
+
+Additional links :
 https://redhat-developer-demos.github.io/knative-tutorial/knative-tutorial/advanced/eventing-with-kafka.html
 
 

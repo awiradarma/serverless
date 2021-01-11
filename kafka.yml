@@ -1,0 +1,10 @@
+apiVersion: ignite.weave.works/v1alpha3
+kind: VM
+metadata:
+  name: kafka
+spec:
+  image:
+    oci: weaveworks/ignite-centos:7
+  cpus: 2
+  diskSize: 10GB
+  memory: 2GB
