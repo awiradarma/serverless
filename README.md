@@ -289,7 +289,14 @@ $
 
 
 ### knative eventing
-
+- note: if you ever need to delete knative-eventing namespace and reinstall again, make sure to delete the two knative-eventing validating webhook first
+```
+$ k delete ValidatingWebhookConfiguration config.webhook.eventing.knative.dev
+validatingwebhookconfiguration.admissionregistration.k8s.io "config.webhook.eventing.knative.dev" deleted
+$ k delete ValidatingWebhookConfiguration validation.webhook.eventing.knative.dev
+validatingwebhookconfiguration.admissionregistration.k8s.io "validation.webhook.eventing.knative.dev" deleted
+$ 
+```
 - Install CRDs, core components and the default in-memory channel and broker
 ```
 $ k apply --filename https://github.com/knative/eventing/releases/download/v0.19.0/eventing-crds.yaml
@@ -737,28 +744,23 @@ kafka01            ClusterIP   10.43.116.248   <none>        9092/TCP          5
 $ 
 
 ```
-- install knative eventing support for kafkasource ( sourced from https://github.com/knative/eventing-contrib/releases/download/v0.17.7 ) after modifying the bootstrap server to point to the IP address of kafka VM
+- install knative eventing support for kafkasource 
 ```
-$ grep 9092 kafka-channel.yaml 
-  # which is in the format of my-cluster-kafka-bootstrap.my-kafka-namespace:9092.
-  bootstrapServers: 10.61.0.16:9092
-$
-$ k apply -f kafka-source.yaml
+$ k apply --filename https://github.com/knative-sandbox/eventing-kafka/releases/download/v0.19.0/source.yaml
+
 $ k get po
 NAME                                    READY   STATUS    RESTARTS   AGE
-eventing-controller-66c877b879-qtbcj    1/1     Running   0          15h
-eventing-webhook-644c5c7667-sshrs       1/1     Running   0          15h
-imc-controller-587f98f97d-4kstm         1/1     Running   0          15h
-imc-dispatcher-6db95d7857-vghzx         1/1     Running   0          15h
-mt-broker-ingress-7d8595d747-8q2dx      1/1     Running   0          15h
-mt-broker-filter-6bd64f8c65-bt4pc       1/1     Running   0          15h
-mt-broker-controller-76b65f7c96-rbbsv   1/1     Running   0          15h
-kafka-ch-controller-f6f9ff8b5-xcj77     1/1     Running   0          27s
-kafka-webhook-7c5859dbb-tm8q2           1/1     Running   0          26s
+eventing-controller-66c877b879-pfjp6    1/1     Running   0          67m
+eventing-webhook-644c5c7667-nskzx       1/1     Running   0          67m
+imc-dispatcher-6db95d7857-5kj5h         1/1     Running   0          55m
+imc-controller-587f98f97d-xx48j         1/1     Running   0          55m
+mt-broker-filter-6bd64f8c65-bmj5f       1/1     Running   0          55m
+mt-broker-controller-76b65f7c96-ts77d   1/1     Running   0          55m
+mt-broker-ingress-7d8595d747-2ftgx      1/1     Running   0          55m
 $ 
 $ k get po -n knative-sources
 NAME                                        READY   STATUS    RESTARTS   AGE
-kafka-controller-manager-675fdccdbb-6vqw8   1/1     Running   0          88s
+kafka-controller-manager-55bdcb8f5b-lg2jg   1/1     Running   0          2m12s
 $ 
 
 ```
@@ -876,7 +878,26 @@ Data,
 - You can visualize the triggering event that started the event-display via kiali
 ![eventing_kafka_service.png](eventing_kafka_service.png)
 
-### Leveraging kafka broker
+### Leveraging kafka channel
+- Install KafkaChannel support
+```
+$ curl -L "https://github.com/knative-sandbox/eventing-kafka/releases/download/v0.19.0/channel-consolidated.yaml" \
+ | sed 's/REPLACE_WITH_CLUSTER_URL/10.61.0.16:9092/' \
+ | k apply --filename -
+$ k get po -n knative-eventing
+NAME                                    READY   STATUS    RESTARTS   AGE
+eventing-controller-66c877b879-pfjp6    1/1     Running   0          81m
+eventing-webhook-644c5c7667-nskzx       1/1     Running   0          81m
+imc-dispatcher-6db95d7857-5kj5h         1/1     Running   0          70m
+imc-controller-587f98f97d-xx48j         1/1     Running   0          70m
+mt-broker-filter-6bd64f8c65-bmj5f       1/1     Running   0          70m
+mt-broker-controller-76b65f7c96-ts77d   1/1     Running   0          70m
+mt-broker-ingress-7d8595d747-2ftgx      1/1     Running   0          70m
+kafka-ch-controller-c85d7df5-6kl85      1/1     Running   0          32s
+kafka-webhook-7749c5558c-hcscx          1/1     Running   0          31s
+$ 
+
+```
 
 - Set up KafkaChannel as default channel in knativekafka namespace
 
@@ -931,16 +952,16 @@ $
 ```
 $ k get po -n knative-eventing
 NAME                                    READY   STATUS    RESTARTS   AGE
-eventing-controller-66c877b879-qtbcj    1/1     Running   0          21h
-eventing-webhook-644c5c7667-sshrs       1/1     Running   0          21h
-imc-controller-587f98f97d-4kstm         1/1     Running   0          21h
-imc-dispatcher-6db95d7857-vghzx         1/1     Running   0          21h
-mt-broker-ingress-7d8595d747-8q2dx      1/1     Running   0          21h
-mt-broker-filter-6bd64f8c65-bt4pc       1/1     Running   0          21h
-mt-broker-controller-76b65f7c96-rbbsv   1/1     Running   0          21h
-kafka-webhook-7c5859dbb-tm8q2           1/1     Running   0          6h6m
-kafka-ch-dispatcher-567d595bb7-gfp5k    1/1     Running   0          2m53s
-kafka-ch-controller-f6f9ff8b5-xcj77     1/1     Running   2          6h6m
+eventing-controller-66c877b879-pfjp6    1/1     Running   0          83m
+eventing-webhook-644c5c7667-nskzx       1/1     Running   0          83m
+imc-dispatcher-6db95d7857-5kj5h         1/1     Running   0          72m
+imc-controller-587f98f97d-xx48j         1/1     Running   0          72m
+mt-broker-filter-6bd64f8c65-bmj5f       1/1     Running   0          72m
+mt-broker-controller-76b65f7c96-ts77d   1/1     Running   0          72m
+mt-broker-ingress-7d8595d747-2ftgx      1/1     Running   0          72m
+kafka-ch-controller-c85d7df5-6kl85      1/1     Running   0          2m32s
+kafka-webhook-7749c5558c-hcscx          1/1     Running   0          2m31s
+kafka-ch-dispatcher-696d5d44c8-678mw    1/1     Running   0          72s
 $ 
 ```
 - check that a new kafka topic has been generated
@@ -1024,9 +1045,279 @@ $
 ![kafka_channel.png](kafka_channel.png)
 ![eventing_kafka_channel.png](eventing_kafka_channel.png)
 
+
+## Kafka as knative broker
+
+- install the kafka controller and broker support
+```
+$ k apply --filename https://github.com/knative-sandbox/eventing-kafka-broker/releases/download/v0.19.0/eventing-kafka-controller.yaml
+
+$ k apply --filename https://github.com/knative-sandbox/eventing-kafka-broker/releases/download/v0.19.0/eventing-kafka-broker.yaml
+```
+- modify the default config map for kafka-broker (point to the right bootstrap address and use a replication factor of 1 since we only have a single kafka broker)
+```
+$ k describe cm kafka-broker-config -n knative-eventing
+Name:         kafka-broker-config
+Namespace:    knative-eventing
+Labels:       <none>
+Annotations:  <none>
+
+Data
+====
+bootstrap.servers:
+----
+10.61.0.16:9092
+default.topic.partitions:
+----
+10
+default.topic.replication.factor:
+----
+1
+Events:  <none>
+```
+- a few new pods will show up within knative-eventing namespace
+```
+$ k get po -n knative-eventing
+NAME                                       READY   STATUS    RESTARTS   AGE
+eventing-controller-66c877b879-pfjp6       1/1     Running   0          103m
+eventing-webhook-644c5c7667-nskzx          1/1     Running   0          103m
+imc-dispatcher-6db95d7857-5kj5h            1/1     Running   0          92m
+imc-controller-587f98f97d-xx48j            1/1     Running   0          92m
+mt-broker-filter-6bd64f8c65-bmj5f          1/1     Running   0          92m
+mt-broker-controller-76b65f7c96-ts77d      1/1     Running   0          92m
+mt-broker-ingress-7d8595d747-2ftgx         1/1     Running   0          92m
+kafka-ch-controller-c85d7df5-6kl85         1/1     Running   0          22m
+kafka-webhook-7749c5558c-hcscx             1/1     Running   0          22m
+kafka-ch-dispatcher-696d5d44c8-678mw       1/1     Running   0          20m
+kafka-controller-6d57547d68-pmlwb          1/1     Running   0          43s
+kafka-webhook-eventing-6885994996-fpbw4    1/1     Running   0          42s
+kafka-broker-receiver-c994b6bd4-qfg9v      1/1     Running   0          28s
+kafka-broker-dispatcher-58db759dd4-xqmbb   1/1     Running   0          28s
+$ 
+```
+- Let's deploy a new kafka broker
+```
+$ k apply -f kafka-default-broker.yml 
+broker.eventing.knative.dev/default created
+$ 
+
+$ k get broker
+NAME      URL                                                                                   AGE   READY   REASON
+default   http://kafka-broker-ingress.knative-eventing.svc.cluster.local/knativekafka/default   57s   True    
+$ 
+```
+- validate that a new kafka topic is automatically generated
+```
+[root@kafka01 kafka_2.13-2.7.0]# ./bin/kafka-topics.sh  --list --bootstrap-server localhost:9092
+__consumer_offsets
+knative-broker-knativekafka-default
+knative-messaging-kafka.knativekafka.my-events-ch
+mykafkasource
+test
+[root@kafka01 kafka_2.13-2.7.0]# 
+
+```
+- Let's manually POST a message to the kafka-broker-ingress service
+```
+$ k apply -f - << EOF
+> apiVersion: apps/v1
+> kind: Deployment
+> metadata:
+>   name: hello-display
+> spec:
+>   replicas: 1
+>   selector:
+>     matchLabels: &labels
+>       app: hello-display
+>   template:
+>     metadata:
+>       labels: *labels
+>     spec:
+>       containers:
+>         - name: event-display
+>           image: gcr.io/knative-releases/knative.dev/eventing-contrib/cmd/event_display
+> 
+> ---
+> 
+> kind: Service
+> apiVersion: v1
+> metadata:
+>   name: hello-display
+> spec:
+>   selector:
+>     app: hello-display
+>   ports:
+>   - protocol: TCP
+>     port: 80
+>     targetPort: 8080
+> EOF
+deployment.apps/hello-display created
+service/hello-display created
+$ 
+$ k get po
+NAME                            READY   STATUS    RESTARTS   AGE
+hello-display-5d7b749f6-ztqhv   2/2     Running   0          13s
+$ 
+$ k apply -f - << EOF
+> apiVersion: eventing.knative.dev/v1
+> kind: Trigger
+> metadata:
+>   name: hello-display
+> spec:
+>   broker: default
+>   filter:
+>     attributes:
+>       type: greeting
+>   subscriber:
+>     ref:
+>      apiVersion: v1
+>      kind: Service
+>      name: hello-display
+> EOF
+trigger.eventing.knative.dev/hello-display created
+$ k get trigger
+NAME            BROKER    SUBSCRIBER_URI                                         AGE   READY   REASON
+hello-display   default   http://hello-display.knativekafka.svc.cluster.local/   5s    True    
+$ 
+$ k apply -f - << EOF
+> apiVersion: v1
+> kind: Pod
+> metadata:
+>   labels:
+>     run: curl
+>   name: curl
+> spec:
+>   containers:
+>     # This could be any image that we can SSH into and has curl.
+>   - image: radial/busyboxplus:curl
+>     imagePullPolicy: IfNotPresent
+>     name: curl
+>     resources: {}
+>     stdin: true
+>     terminationMessagePath: /dev/termination-log
+>     terminationMessagePolicy: File
+>     tty: true
+> EOF
+pod/curl created
+$ k attach curl -it
+Defaulting container name to curl.
+Use 'kubectl describe pod/curl -n knativekafka' to see all of the containers in this pod.
+If you don't see a command prompt, try pressing enter.
+[ root@curl:/ ]$ curl -v "http://kafka-broker-ingress.knative-eventing.svc.cluster.local/knativekafka/default" \
+> -X POST \
+> -H "Ce-Id: say-hello" \
+> -H "Ce-Specversion: 1.0" \
+> -H "Ce-Type: greeting" \
+> -H "Ce-Source: not-sendoff" \
+> -H "Content-Type: application/json" \
+> -d '{"msg":"Hello Knative!"}'
+> POST /knativekafka/default HTTP/1.1
+> User-Agent: curl/7.35.0
+> Host: kafka-broker-ingress.knative-eventing.svc.cluster.local
+> Accept: */*
+> Ce-Id: say-hello
+> Ce-Specversion: 1.0
+> Ce-Type: greeting
+> Ce-Source: not-sendoff
+> Content-Type: application/json
+> Content-Length: 24
+> 
+< HTTP/1.1 202 Accepted
+< content-length: 0
+< x-envoy-upstream-service-time: 193
+< date: Wed, 13 Jan 2021 14:36:50 GMT
+< server: envoy
+< 
+[ root@curl:/ ]$ exit
+Session ended, resume using 'kubectl attach curl -c curl -i -t' command when the pod is running
+$ 
+
+```
+- Validate that the message is processed by the sink service
+```
+$ k logs -l app=hello-display --tail=100 -c event-display
+☁️  cloudevents.Event
+Validation: valid
+Context Attributes,
+  specversion: 1.0
+  type: greeting
+  source: not-sendoff
+  id: say-hello
+  datacontenttype: application/json
+Data,
+  {
+    "msg": "Hello Knative!"
+  }
+$ 
+```
+- View the content in the corresponding kafka topic
+```
+[root@kafka01 kafka_2.13-2.7.0]# bin/kafka-console-consumer.sh --topic knative-broker-knativekafka-default --from-beginning --bootstrap-server localhost:9092 --property print.headers=true --property print.timestamp=true
+CreateTime:1610548610360	ce_specversion:1.0,ce_id:say-hello,ce_source:not-sendoff,ce_type:greeting,content-type:application/json	{"msg":"Hello Knative!"}
+^CProcessed a total of 1 messages
+
+```
+- Now let's try using a Kafkasource that's connected to the same broker, by first creating a kafka topic
+```
+[root@kafka01 kafka_2.13-2.7.0]# bin/kafka-topics.sh --create --topic mykafkasource --bootstrap-server localhost:9092
+Created topic mykafkasource.
+[root@kafka01 kafka_2.13-2.7.0]# 
+```
+- And create a Kafkasource pointing to that new topic with the sink pointing to the default broker we created
+```
+$ cat kafkasource-to-kafkabroker.yaml
+apiVersion: sources.knative.dev/v1beta1
+kind: KafkaSource
+metadata:
+  name: my-kafka-source
+spec:
+  consumerGroup: my_kafka_source_consumer_group
+  bootstrapServers:
+    - kafka01:9092
+  topics:
+    - mykafkasource
+  sink:
+    ref:
+      apiVersion: eventing.knative.dev/v1
+      kind: Broker
+      name: default
+$ 
+$ k apply -f kafkasource-to-kafkabroker.yaml 
+kafkasource.sources.knative.dev/my-kafka-source created
+$ k get po
+NAME                                                              READY   STATUS            RESTARTS   AGE
+hello-display-5d7b749f6-ztqhv                                     2/2     Running           0          36m
+curl                                                              2/2     Running           1          35m
+kafkasource-my-kafka-source-38d5456c99f79343aaf5dd892a75ecpvsrm   0/2     PodInitializing   0          4s
+$ k get kafkasource
+NAME              TOPICS              BOOTSTRAPSERVERS   READY   REASON   AGE
+my-kafka-source   ["mykafkasource"]   ["kafka01:9092"]   True             2m7s
+$ 
+
+```
+- Produce a couple messages into the mykafkasource topic
+```
+[root@kafka01 kafka_2.13-2.7.0]# ./bin/kafka-console-producer.sh --topic mykafkasource --bootstrap-server localhost:9092
+>{"id": 123456}
+>{"name": "Dave Smith"}
+>
+```
+- Observe the cloud event messages that are showing up in the kafka broker topic
+```
+[root@kafka01 kafka_2.13-2.7.0]# bin/kafka-console-consumer.sh --topic knative-broker-knativekafka-default --from-beginning --bootstrap-server localhost:9092 --property print.headers=true --property print.timestamp=true
+CreateTime:1610548610360	ce_specversion:1.0,ce_id:say-hello,ce_source:not-sendoff,ce_type:greeting,content-type:application/json	{"msg":"Hello Knative!"}
+CreateTime:1610561223869	ce_specversion:1.0,ce_id:partition:0/offset:0,ce_source:/apis/v1/namespaces/knativekafka/kafkasources/my-kafka-source#mykafkasource,ce_type:dev.knative.kafka.event,ce_subject:partition:0#0,ce_time:2021-01-13T18:07:02.662Z,ce_traceparent:00-b05887094eaf02aacc068de943ab14ca-b1132697ac4f5fe5-00	{"id": 123456}
+CreateTime:1610561270989	ce_specversion:1.0,ce_id:partition:0/offset:1,ce_source:/apis/v1/namespaces/knativekafka/kafkasources/my-kafka-source#mykafkasource,ce_type:dev.knative.kafka.event,ce_subject:partition:0#1,ce_time:2021-01-13T18:07:50.064Z,ce_traceparent:00-1e362c3b13b26511751f88baeadd3c98-9f17436cf4904e29-00	{"name": "Dave Smith"}
+
+```
+- Those two events are not triggering any services since the only trigger we have defined does not match the attributes of the new cloudevents
+
+
+
 Additional links :
 https://redhat-developer-demos.github.io/knative-tutorial/knative-tutorial/advanced/eventing-with-kafka.html
 
+https://github.com/knative-sandbox/eventing-kafka-broker/releases/tag/v0.19.0 
 
 https://github.com/knative/eventing-contrib/releases/tag/v0.18.8
 

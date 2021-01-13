@@ -1,0 +1,15 @@
+apiVersion: sources.knative.dev/v1beta1
+kind: KafkaSource
+metadata:
+  name: my-kafka-source
+spec:
+  consumerGroup: my_kafka_source_consumer_group
+  bootstrapServers:
+    - kafka01:9092
+  topics:
+    - mykafkasource
+  sink:
+    ref:
+      apiVersion: eventing.knative.dev/v1
+      kind: Broker
+      name: default
