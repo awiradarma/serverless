@@ -1377,6 +1377,10 @@ $
 ![jaeger - knative serving DAG](jaeger_knativeserving_DAG.png)
 ![jaeger - knative serving](jaeger_knative_serving.png)
 
+- Screenshots comparing knative serving cold start and warm start response time
+![knative serving cold start](knative_serving_cold_start.png)
+![knative serving warm start](knative_serving_warm_start.png)
+
 Additional links :
 https://redhat-developer-demos.github.io/knative-tutorial/knative-tutorial/advanced/eventing-with-kafka.html
 
