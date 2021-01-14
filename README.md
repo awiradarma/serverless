@@ -1,7 +1,7 @@
 # knative exploration
 
 
-### Install k3s on top of firecracker VMs via weaveworks ignite
+## Install k3s on top of firecracker VMs via weaveworks ignite
 - Create master VM  
 ```
 $ sudo ignite run --config master.yml
@@ -92,7 +92,7 @@ kube-system   local-path-provisioner-7c458769fb-xw8hz   1/1     Running   0     
 $ 
 ```
 
-### Install istio on top of k3s cluster
+## Install istio on top of k3s cluster
 
 ```
 $ istioctl install --set profile=demo
@@ -201,7 +201,7 @@ $
 ```
 ![jaeger_hello_world.png](jaeger_hello_world.png)
 
-### install knative-serving on top of istio
+## install knative-serving on top of istio
 
 ```
 $ k apply --filename https://github.com/knative/serving/releases/download/v0.19.0/serving-crds.yaml
@@ -288,7 +288,7 @@ $
 ![jaeger_serving_monkey.png](jaeger_serving_monkey.png)
 
 
-### knative eventing
+## knative eventing
 - note: if you ever need to delete knative-eventing namespace and reinstall again, make sure to delete the two knative-eventing validating webhook first
 ```
 $ k delete ValidatingWebhookConfiguration config.webhook.eventing.knative.dev
@@ -640,7 +640,7 @@ subscription.messaging.knative.dev/default-goodbye-display-700e9dc2-8670-4d93-a3
 $ 
 ```
 
-### Configure kafka as knative eventing source
+## Configure kafka as knative eventing source
 
 - create a new VM to run kafka, rename it as kafka01
 ```
@@ -764,7 +764,7 @@ kafka-controller-manager-55bdcb8f5b-lg2jg   1/1     Running   0          2m12s
 $ 
 
 ```
-### Kafkasource - sink
+## Kafkasource - sink
 - create a new namespace, enable istio injection, and create a kafkasource
 ```
 $ k create ns knativekafka
@@ -878,7 +878,7 @@ Data,
 - You can visualize the triggering event that started the event-display via kiali
 ![eventing_kafka_service.png](eventing_kafka_service.png)
 
-### Leveraging kafka channel
+## Leveraging kafka channel
 - Install KafkaChannel support
 ```
 $ curl -L "https://github.com/knative-sandbox/eventing-kafka/releases/download/v0.19.0/channel-consolidated.yaml" \
@@ -1312,7 +1312,70 @@ CreateTime:1610561270989	ce_specversion:1.0,ce_id:partition:0/offset:1,ce_source
 ```
 - Those two events are not triggering any services since the only trigger we have defined does not match the attributes of the new cloudevents
 
+- These events are automatically registered into the knative broker event registry
+```
+$ k get eventtypes
+NAME                               TYPE                      SOURCE                                                                                 SCHEMA   BROKER    DESCRIPTION   READY   REASON
+974144cd8858ddbb0b08fb6649a5833c   dev.knative.kafka.event   /apis/v1/namespaces/knativekafka/kafkasources/my-kafka-source#mykafkasource                     default                 True    
+6cd56d454c7a0a1aa65f2e139e04e9a0   dev.knative.kafka.event   /apis/v1/namespaces/knativekafka/kafkasources/my-other-kafka-source#otherkafkasource            default                 True    
 
+```
+## Enable tracing
+- Modify the corresponding config map in both knative-eventing as well as knative-serving namespace
+```
+$ k describe cm config-tracing -n knative-eventing
+Name:         config-tracing
+Namespace:    knative-eventing
+Labels:       eventing.knative.dev/release=v0.19.0
+              knative.dev/config-category=eventing
+              knative.dev/config-propagation=original
+Annotations:  knative.dev/example-checksum: 4002b4c2
+
+Data
+====
+backend:
+----
+zipkin
+debug:
+----
+true
+sample-rate:
+----
+1.0
+zipkin-endpoint:
+----
+http://zipkin.istio-system.svc.cluster.local:9411/api/v2/spans
+Events:  <none>
+$ 
+$ k describe cm config-tracing -n knative-serving
+Name:         config-tracing
+Namespace:    knative-serving
+Labels:       serving.knative.dev/release=v0.19.0
+Annotations:  knative.dev/example-checksum: 4002b4c2
+
+Data
+====
+debug:
+----
+true
+sample-rate:
+----
+1.0
+zipkin-endpoint:
+----
+http://zipkin.istio-system.svc.cluster.local:9411/api/v2/spans
+backend:
+----
+zipkin
+Events:  <none>
+$ 
+```
+- Some screenshots showing interaction / traces of an event that started in a kafkasource (a new message inserted to a kafka topic called otherkafkasource) which was consumed by a kafkabroker and triggered a call to a knative serving service called event-display
+![kafkasource to kafkabroker](kiali_kafkasource_to_kafkabroker.png)
+![istio ingress to activator](kiali_knativeserving_ingress.png)
+![activator to actual pod](kiali_knativeserving_activator_to_pod.png)
+![jaeger - knative serving DAG](jaeger_knativeserving_DAG.png)
+![jaeger - knative serving](jaeger_knative_serving.png)
 
 Additional links :
 https://redhat-developer-demos.github.io/knative-tutorial/knative-tutorial/advanced/eventing-with-kafka.html
